@@ -1,0 +1,106 @@
+import NTCIR15Util as nutil
+import sys
+import json
+import re
+
+args = sys.argv
+
+QUESTION_FILE_PATH      = args[1]
+UTTERANCES_FILE_PATH    = args[2]
+
+PARTY_DIC = { 
+    "自民党":"都議会自由民主党",
+    "民主党":"都議会民主党",
+    "公明党":"都議会公明党",
+    "日本共産党":"日本共産党",
+    "ネット":"生活者ネットワーク",
+    "1/2の会":"1/2の会",
+    "行革110番":"行革110番",
+    "自治市民":"自治市民",
+    "市民の会":"市民の会"
+}
+
+with open(QUESTION_FILE_PATH, "r") as f:
+    questions = json.load(f)
+
+with open(UTTERANCES_FILE_PATH, "r") as f:
+    utterances = json.load(f)
+
+# for i,q in enumerate(questions) :
+for i,q in enumerate(questions) :
+
+    print( "--------------------\n" + str(i) + "番目のデータ" )
+    match_utterance = nutil.get_match_utterance(q["MeetingStartDate"], q["MeetingEndDate"], utterances, cc=True,vose=False)
+
+    party_opinion = {}
+
+    party_rule_dict = {}
+
+    
+    for mu in match_utterance :
+        su_sets = mu["Proceeding"]
+
+    # いずれかの党名、代表、立場、賛成反対の単語が入っていれば、これは意見表明だろうという判定
+
+    # ちょっとゆるいばーじょん
+    # opinions = nutil.grep_string( nutil.grep_string( nutil.grep_string( su_sets,["代表"] ), ["立場"] ) , ["賛成","反対"])
+
+    opinions = nutil.grep_string( nutil.grep_string( nutil.grep_string( nutil.grep_string( su_sets , PARTY_DIC.values() ) ,["代表"] ), ["立場"] ) , ["賛成","反対"])
+    # print(len(opinions))
+        
+    for op in opinions : 
+
+        utterance = op["Utterance"]
+        speaker = op["Speaker"]
+
+        express = utterance.split("。")[0]      # 意見表明は一行で完結する(と思っている)
+
+        # 党名の確認(これSpeakerとかから整合とれないの?)
+        party_formal_name=""
+        party_unformal_name=""
+
+        for pn in PARTY_DIC.values() :
+            if express.find(pn) >= 0 :
+                party_formal_name=pn
+                party_unformal_name=nutil.get_key_from_value(PARTY_DIC, pn)
+                break
+        if party_formal_name == "" :
+            continue    # 多分議長とかその辺の発言
+
+        print("{} : {} : の発言\n\t{}".format(party_unformal_name, speaker, express))
+        party_rule_dict[party_unformal_name] = {}
+
+        # どの議案に対して 賛成/反対 かを判定
+
+        # デフォルト値を決定,すべて〜とかで指定されているもの
+        default = "賛成"
+
+        tmp  = express.rfind("全て")
+        tmp2 = express.rfind("すべて")
+
+        if (tmp >= 0) or (tmp2 >= 0) :
+            max_iter = max([tmp,tmp2]) 
+            ag_iter  = express[max_iter:].find("賛成")
+            nag_iter = express[max_iter:].find("反対")
+            if (ag_iter < 0) and (nag_iter < 0) : print("defaultが不明になった")
+
+            if nag_iter >= 0 and nag_iter < ag_iter : default="反対"
+
+        party_rule_dict[party_unformal_name]["Default"] = default
+
+        # ルールを追加していく
+
+        party_rule_dict[party_unformal_name]["Rules"] = []
+
+        gou_iter = re.finditer("号", express)
+        if not bool( [ gou.span()[0] for gou in gou_iter ] ) : continue     # 全て賛成/反対のみであれば、次の発言へ
+        
+        # ~から~まで、の後にしか単一指定は来ないという前提で進める
+        
+
+
+
+
+
+# print(party_opinion)
+
