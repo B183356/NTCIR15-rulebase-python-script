@@ -1,47 +1,30 @@
-import NTCIR15Util as nutil
+from NTCIR15Util import get_key_from_value, arg_parse, get_match_utterance, grep_string
 import sys
-import json
 import re
 import kanjize
-import os
+from tqdm import tqdm
+
+
+def info_print(text, exit=None, info=""):
+    if SHOW_INFO_PRINT:
+        if info == "":
+            print("{}".format(text), file=sys.stderr)
+        else:
+            print("{}:\n\t{}".format(info, text), file=sys.stderr)
+        if exit is not None:
+            sys.exit(exit)
+
+
+def error_print(text, exit=None):
+    if SHOW_ERROR_PRINT:
+        info_print(text, exit=exit, info="ERROR")
+
+
+SHOW_ERROR_PRINT = False
+SHOW_INFO_PRINT = False
 
 args = sys.argv
-
-if "-d" not in args:
-
-    if len(args) < 3:
-        print("ERROR : コマンドライン引数が不足")
-
-    QUESTION_FILE_PATH = args[1]
-    UTTERANCES_FILE_PATH = args[2]
-
-    with open(QUESTION_FILE_PATH, "r") as f:
-        questions = json.load(f)
-
-    with open(UTTERANCES_FILE_PATH, "r") as f:
-        utterances = json.load(f)
-
-else:
-    args.remove("-d")
-    if len(args) < 3:
-        print("ERROR : コマンドライン引数が不足")
-
-    QUESTIONS_DIR_PATH = args[1]
-    UTTERANCES_FILE_PATH = args[2]
-
-    q_file_list = os.listdir(QUESTIONS_DIR_PATH)
-    q_s = []
-
-    for q_file in q_file_list:
-        path = os.path.join(QUESTIONS_DIR_PATH, q_file)
-        with open(path, "r") as f:
-            questions = json.load(f)
-            q_s.extend(questions)
-
-    questions = q_s
-
-    with open(UTTERANCES_FILE_PATH, "r") as f:
-        utterances = json.load(f)
+questions, utterances = arg_parse(args)
 
 AGREE_SIGHN = "賛成"
 NON_AGREE_SIGHN = "反対"
@@ -69,7 +52,8 @@ PARTY_DIC = {
     "みんな": "みんなの党Tokyo",
     "みんなの党": "都議会会派みんなの党",    # 都議会みんなの党とも
     "維新の党": "維新の党",
-    # 維新の会？
+    "日本維新": "日本維新",
+    "無（維新の会）": "維新の会",
     "結いと維新": "結いと維新"
 }
 
@@ -81,32 +65,33 @@ sum_d_len = 0
 warn_list = []
 warn_list_vose = []
 
-# for i,q in enumerate(questions) :
+"""
+なんかうまくいかない
+if not SHOW_INFO_PRINT and not SHOW_ERROR_PRINT:
+    loop = tqdm(enumerate(questions)
+else:
+    loop = enumerate(questions)
+"""
+
+
+# 対象議題ごとに繰り返し。ファイルごとではない。注意
+# for i, q in loop:
 for i, q in enumerate(questions):
-    warn_flag = False
-
-    print("--------------------{}番目のQuestion--------------------\n".format(str(i)))
-    print("対象議題番号\t: {}\n".format(q["BillNumber"]))
-
-    # 実は一つのファイルには同じ会期の質問しか入っていないので、この行は意味がない
-    match_utterance = nutil.get_match_utterance(q["MeetingStartDate"], q["MeetingEndDate"], utterances, cc=True, vose=False)
 
     party_opinion = {}
-
     party_rule_dict = {}
+
+    info_print("--------------------{}番目のQuestion--------------------\n".format(str(i)))
+    info_print("対象議題番号\t: {}\n".format(q["BillNumber"]))
+
+    # 会期がマッチした会議録を取得してくる
+    match_utterance = get_match_utterance(q["MeetingStartDate"], q["MeetingEndDate"], utterances, cc=True, vose=False)
 
     for mu in match_utterance:
         su_sets = mu["Proceeding"]
 
-    # いずれかの党名、代表、立場、賛成反対の単語が入っていれば、これは意見表明だろうという判定
-
-    # ちょっとゆるいばーじょん
-    opinions = nutil.grep_string(nutil.grep_string(nutil.grep_string(su_sets, ["代表"]), ["立場"]), [AGREE_SIGHN, NON_AGREE_SIGHN])
-
-    # 厳しいバージョン、デバッグ用
-    opinions_forcount = nutil.grep_string(nutil.grep_string(nutil.grep_string(nutil.grep_string(su_sets, PARTY_DIC.values()), ["代表"]), ["立場"]), [AGREE_SIGHN, NON_AGREE_SIGHN])
-
-# print(dif_opinion,file=sys.stderr)
+    # いずれかの党名、代表、立場、賛成反対のいずれか、といった単語が全て入っていれば、これは意見表明だろうという判定
+    opinions = grep_string(grep_string(su_sets, ["代表", "立場"], mode="and"), [AGREE_SIGHN, NON_AGREE_SIGHN], mode="or")
 
     for j, op in enumerate(opinions):
 
@@ -116,8 +101,8 @@ for i, q in enumerate(questions):
         speaker = op["Speaker"]
 
         if speaker in q["SpeakerList"]:
-            print("{}, {} : {}", format(q["BillNumber"], speaker, q["SpeakerList"][speaker]), file=sys.stderr)  # NOQA
-            print("DEBUG : {}はSpeakerListに含まれます。動作停止".format(speaker))
+            info_print("{}, {} : {}", format(q["BillNumber"], speaker, q["SpeakerList"][speaker]), file=sys.stderr)
+            info_print("{}はSpeakerListに含まれます。動作停止".format(speaker), info="DEBUG")
             sys.exit(1)
 
         # express = utterance.split("。")[0]      # 意見表明は一行で完結する(と思っている)
@@ -128,18 +113,10 @@ for i, q in enumerate(questions):
                 express = us
                 continue
         if express == "":
-            print("ERROR: 一文に要求単語が入りきっていません")
+            # info_print("一文に要求単語が入りきっていません", info="DEBUG")
             warn_list_vose.append(utterance)
             continue
             sys.exit(1)
-
-        """
-        isin = []
-        for k in PARTY_DIC.keys():
-            isin.append(express.find(PARTY_DIC[k]))
-        if (max(isin) == -1):
-            print(express, file=sys.stderr)
-        """
 
         # 党名の確認(これSpeakerとかから整合とれないの?)
         party_formal_name = ""
@@ -148,14 +125,14 @@ for i, q in enumerate(questions):
         for pn in PARTY_DIC.values():
             if express.find(pn) >= 0:
                 party_formal_name = pn
-                party_unformal_name = nutil.get_key_from_value(PARTY_DIC, pn)
+                party_unformal_name = get_key_from_value(PARTY_DIC, pn)
                 break
         if party_formal_name == "":
             warn_list.append(express)
             warn_list_vose.append(utterance)
             continue    # 多分議長とかその辺の発言
 
-        # print("{} : {} : の発言\n\t{}".format(party_unformal_name, speaker, express))
+        info_print("{} : {} : の発言\n\t{}".format(party_unformal_name, speaker, express))
         party_rule_dict[party_unformal_name] = {}
         party_rule_dict[party_unformal_name]["Name"] = party_unformal_name
 
@@ -175,7 +152,7 @@ for i, q in enumerate(questions):
             ag_iter = express[max_iter:].find(AGREE_SIGHN)
             nag_iter = express[max_iter:].find(NON_AGREE_SIGHN)
             if (ag_iter < 0) and (nag_iter < 0):
-                print("ERROR : defaultが不明な発言。")
+                error_print("defaultが不明な発言。\n\t\t{}".format(express))
                 sys.exit(1)
             if nag_iter >= 0 and nag_iter < ag_iter:
                 default = NON_AGREE_SIGHN
@@ -296,12 +273,12 @@ for i, q in enumerate(questions):
                     continue
 
                 # 末尾に、「号は継続審査云々」とかきちゃうとここに到達する
-                print("WARNING : 継続審査などの立場表明があります")
+                info_print("WARNING : 継続審査などの立場表明があります", info="WARNING")
                 pass
 
         # 誰かの発言ごとに意見を抽出して表示
-        # print(party_rule_dict[party_unformal_name])
-        print()
+        info_print(party_rule_dict[party_unformal_name])
+        info_print("")
 
     # questionの議題に対しての、各政党の答え
     billnumber_orig = q["BillNumber"]
@@ -326,7 +303,7 @@ for i, q in enumerate(questions):
         for r in d["Rules"]:
 
             if r["Assertion"] == "エラー":
-                print("ERROR : よくわからない立場表明が存在。 \n\t> {}".format(r["Assertion"]))  # 継続審査とかで引っかかる可能性
+                error_print("よくわからない立場表明が存在。 \n\t\t> {}".format(r["Assertion"]))  # 継続審査とかで引っかかる可能性
                 # sys.exit()
 
             # from-to ルールについての判定
@@ -345,7 +322,7 @@ for i, q in enumerate(questions):
                     p_assertion = r["Assertion"]
 
             else:
-                print("ERROR : 不正なRuleが格納されています。もしくはRuleが有りません。\n\t> {}".format(r["Rule"]))
+                error_print("不正なRuleが格納されています。もしくはRuleが有りません。\n\t\t> {}".format(r["Rule"]))
                 sys.exit(1)
 
             party_opinion[pname] = p_assertion
@@ -357,8 +334,8 @@ for i, q in enumerate(questions):
 
     # ----------評価----------
 
-    print("{:-^16}".format("各政党立場表明"))
-    print("")
+    info_print("{:-^16}".format("各政党立場表明"))
+    info_print("")
 
     correct_ans = q["ProsConsPartyList"]
     d_len = len(correct_ans)
@@ -368,12 +345,12 @@ for i, q in enumerate(questions):
 
     # ----回答評価---
 
-    print("{:-^64}".format(""))
-    print("{}:{}:{}".format("党名".center(16), "予想".center(16), "正解".center(16)))
-    print("{:-^64}".format(""))
+    info_print("{:-^64}".format(""))
+    info_print("{}:{}:{}".format("党名".center(16), "予想".center(16), "正解".center(16)))
+    info_print("{:-^64}".format(""))
     for k in correct_ans.keys():
         if party_opinion.get(k) is None:
-            print("ERROR : 評価キーが元辞書に有りません。")
+            error_print("評価キーが元辞書に有りません。")
             sys.exit()
 
         if party_opinion[k] == correct_ans[k]:
@@ -384,21 +361,18 @@ for i, q in enumerate(questions):
         else:
             incorrect += 1
 
-        # 日本語だときっちり揃わないらしい、ターミナルの文字幅認識の問題?
-        # print("{:<16}:{:^16}:{:^16}".format(k, correct_ans[k], party_opinion[k]))
-        print("{}:{}:{}".format(k.center(16), party_opinion[k].center(16), correct_ans[k].center(16)))
-    print("{:-^64}".format(""))
+        info_print("{}:{}:{}".format(k.center(16), party_opinion[k].center(16), correct_ans[k].center(16)))
 
-    print("\n\n{:-^16}\n".format("評価"))
-
-    print("正解\t\t: {}".format(correct))
-    print("有効不正解\t: {}".format(incorrect-null_ans))
-    print("無回答\t\t: {}".format(null_ans))
-    print("")
-    print("正答率\t\t\t: {} / {},  {:.2f} %".format(correct, d_len, correct / d_len * 100))
-    print("有効回答率\t\t: {} / {},  {:.2f} %".format(d_len - null_ans, d_len, (d_len - null_ans)/d_len * 100))
-    print("正答率(有効回答)\t: {} / {},  {:.2f} %".format(correct, d_len - null_ans, correct / (d_len-null_ans) * 100))
-    print("\n")
+    info_print("{:-^64}".format(""))
+    info_print("\n\n{:-^16}\n".format("評価"))
+    info_print("正解\t\t: {}".format(correct))
+    info_print("有効不正解\t: {}".format(incorrect-null_ans))
+    info_print("無回答\t\t: {}".format(null_ans))
+    info_print("")
+    info_print("正答率\t\t\t: {} / {},  {:.2f} %".format(correct, d_len, correct / d_len * 100))
+    info_print("有効回答率\t\t: {} / {},  {:.2f} %".format(d_len - null_ans, d_len, (d_len - null_ans)/d_len * 100))
+    info_print("正答率(有効回答)\t: {} / {},  {:.2f} %".format(correct, d_len - null_ans, correct / (d_len-null_ans) * 100))
+    info_print("\n")
 
     sum_correct += correct
     sum_incorrect += incorrect
@@ -419,6 +393,7 @@ print("\n")
 
 # ----------デバッグ用----------
 
+"""
 warn_list = set(warn_list_vose)       # 全体表示
 # warn_list = set(warn_list)       # 意見のみ表示
 
@@ -427,3 +402,4 @@ for w in warn_list:
     pass
 
 print("warn len : {}".format(len(warn_list)))
+"""
