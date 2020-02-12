@@ -37,6 +37,7 @@ def info_print(text, exit=None, info="INFO"):
 
 def arg_parse(args):
     dir_specific = False
+    questions_dict = {}
 
     # ディレクトリ指定モード(指定ディレクトリ内の全ファイルを統合してそれぞれに対して実行)
     if "-d" in args:
@@ -56,6 +57,8 @@ def arg_parse(args):
 
         with open(questions_path, "r") as f:
             questions = json.load(f)
+            questions = [questions]
+            questions_dict[questions_path] = questions
 
     # ディレクトリ指定モード
     else:
@@ -70,12 +73,13 @@ def arg_parse(args):
 
             with open(path, "r") as f:
                 q = json.load(f)
-                questions.extend(q)
+                # questions.append(q)
+                questions_dict[path] = q
 
     with open(utterances_path, "r") as f:
         utterances = json.load(f)
 
-    return(questions, utterances)
+    return(questions_dict, utterances)
 
 
 """
