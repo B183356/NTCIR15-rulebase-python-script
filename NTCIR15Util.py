@@ -1,7 +1,6 @@
 import json
 from datetime import datetime
 import os
-import sys
 
 """
 NTCIR15-rulebase.pyで使った関数群
@@ -13,30 +12,31 @@ change_code
 
 # --------------------
 
-"""
-デバッグプリント用
-"""
-
-
-def error_print(text, exit=None):
-    print("ERROR:\n\t{}".format(text), file=sys.stderr)
-    if exit is not None:
-        sys.exit(exit)
-
-
-def info_print(text, exit=None, info="INFO"):
-    print("WARNING:\n\t{}".format(text), file=sys.stderr)
-    if exit is not None:
-        sys.exit(exit)
-
 
 """
-コマンドライン引数解決
+arg_parse()
+
+コマンドライン引数を解決して問題dictと発言内容dictを返す。
+ディレクトリを指定するパターンと、ファイルのみを指定するパターンがあり、-dオプションをつけることでディレクトリ指定になる
+
+    INPUT
+        args : array
+            sys.argvをそのまま投げることを想定
+
+    OUTPUT
+        question_dict : dict
+            与えられる問題の諸情報を格納した辞書、
+            keyは"ID","Prefecture","Meeting","MeetingStartDate","MeetingEndDate","Proponent",
+            "BillClass","BillSubClass","Bill","BillNumber","SpeakerList","ProsConsPartyList"
+        utterances : dict
+            実際の会議録の情報を格納した辞書、keyは"Date","Prefecture","ProceedingTitle","URL",
+            "Proceeding"
 """
 
 
 def arg_parse(args):
     dir_specific = False
+    questions_dict = {}
 
     # ディレクトリ指定モード(指定ディレクトリ内の全ファイルを統合してそれぞれに対して実行)
     if "-d" in args:
@@ -45,9 +45,9 @@ def arg_parse(args):
 
     # エラー、警告表示
     if len(args) < 3:
-        error_print("コマンドライン引数が不足", exit=1)
+        print("ERROR:\n\tコマンドライン引数が不足", exit=1)
     if len(args) >= 4:
-        info_print("コマンドライン引数が過剰です。不要な部分\n\t\t> {}\n\t以降は無視されます。".format(args[3]), info="WARNING")
+        print("ERROR:\n\tコマンドライン引数が過剰です。不要な部分\n\t\t> {}\n\t以降は無視されます。".format(args[3]), info="WARNING")
 
     # 単一ファイル指定モード
     if not dir_specific:
@@ -56,6 +56,8 @@ def arg_parse(args):
 
         with open(questions_path, "r") as f:
             questions = json.load(f)
+            questions = [questions]
+            questions_dict[questions_path] = questions
 
     # ディレクトリ指定モード
     else:
@@ -70,20 +72,33 @@ def arg_parse(args):
 
             with open(path, "r") as f:
                 q = json.load(f)
-                questions.extend(q)
+                # questions.append(q)
+                questions_dict[path] = q
 
     with open(utterances_path, "r") as f:
         utterances = json.load(f)
 
-    return(questions, utterances)
+    return(questions_dict, utterances)
 
 
 """
+get_match_utterance
+
 会期の始まりと終わりを与えると、それにマッチしたUtteranceを持ってくる関数
-    mes :
-        string, MeetingStartDate、会期の始まりの日付
-    med :
-        string, MeetingEndDate、会期の終わりの日付。
+
+    INPUT
+        mes : string
+            MeetingStartDate、会期の始まりの日付
+        med : string
+            MeetingEndDate、会期の終わりの日付
+        utter_json : dict
+            json.load()で持って来た辞書型データ
+        vose : boolean
+            デバッグ用
+
+    OUTPUT
+        match_utterances : dict
+            [ { "Speaker" : 発言者名, "Utterance" : 発言内容" } , {左同} ... ] という形式の辞書のリスト
 """
 
 
@@ -115,10 +130,17 @@ def get_match_utterance(msd, med, utter_json, cc=False, vose=False):
 
 
 """
-get_match_utteranceとかで取ってきたutteranceを整形する関数。
-主に \n と\u3000 の整形を行う。
-    uterrances :
-        dict, 会議録の一記事。
+change_code()
+
+全角ブランクや開業コードの変換を行う、中身を直接弄るので戻り値無し
+状況に応じて弄る予定
+
+    INPUT
+        uterrances : dict
+            会議録の中から抜き出した単体記事
+
+    OUTPUT
+        なし
 """
 
 
@@ -130,7 +152,22 @@ def change_code(utterances):
 
 
 """
+grep_speaker()
+
 発言と発言者のセットのリストと発言者名を与えると、与えた発言者名の発言だけ抜き出す関数
+発言者と所属会派の対応が取れるならば使えると思って作っておいたが、使うことはなかった
+
+    INPUT
+        susets : dict
+            SpeakerとUtterancesの辞書のリスト
+        name : string
+            発言者名
+        mklist : boolean
+            Trueにするとリストのリスト形式で返してくれる、Falseだと一次元リストに変換してから返す
+
+    OUTPUT
+        speaches : dict
+            susetsと同じ形式
 """
 
 
@@ -150,7 +187,24 @@ def grep_speaker(susets, name, mklist=False):
 
 
 """
+grep_string()
+
 発言の中に、textlist中の単語が入っているものだけを抽出。or検索とand検索は指定すること、デフォルトはor
+使わなくなった
+
+    INPUT
+        susets : dict
+            SpeakerとUtteranceの辞書のリスト
+        textlist : [ str, str, ... ]
+            この中に格納されているテキストで抽出を行う
+        mode : str, "or"/"and"のどちらか
+            or検索かand検索かの指定
+        check : boolean
+            textlistのチェック用、一次元リストで、中身がちゃんとstringか調べるだけ
+
+    OUTPUT
+        greped : dict
+            susetsと同じ
 """
 
 
@@ -158,15 +212,15 @@ def grep_string(susets, textlist, mode="or", check=True):
     if check:
         if type(textlist) is str:
             textlist = [textlist]
-        elif hasattr(textlist, "__iter__"):         # listとかdict_keysとか
+        elif hasattr(textlist, "__iter__"):
             for t in textlist:
                 if type(t) is str:
                     pass
                 else:
-                    error_print("grep_string()の検索リスト中の要素: {} はstrオブジェクトではありません。".format(t), exit=1)
+                    print("ERROR:\n\tgrep_string()の検索リスト中の要素: {} はstrオブジェクトではありません。".format(t), exit=1)
             pass
         else:
-            error_print("grep_string()の検索語句がstrまたはiterableなオブジェクトではありません。\n\t\t> type(textlist)={}".format(type(textlist)), exit=1)
+            print("ERROR:\n\tgrep_string()の検索語句がstrまたはiterableなオブジェクトではありません。\n\t\t> type(textlist)={}".format(type(textlist)), exit=1)
 
     greped = []
 
@@ -183,21 +237,8 @@ def grep_string(susets, textlist, mode="or", check=True):
                     all_in = False
             if all_in:
                 greped.append(ss)
-            
+
         else:
-            error_print("grep_string()のmodeが不正。\n\t\t> mode={}".format(mode), exit=1)
+            print("ERROR:\n\tgrep_string()のmodeが不正。\n\t\t> mode={}".format(mode), exit=1)
 
     return greped
-
-
-"""
-辞書型オブジェクトdとその値の一つvalを与えたとき、そのvalを持つkeyを一つ返す関数。
-今回の用途的にvalは単一にしかならない。
-"""
-
-
-def get_key_from_value(d, val):
-    keys = [k for k, v in d.items() if v == val]
-    if keys:
-        return keys[0]
-    return None
