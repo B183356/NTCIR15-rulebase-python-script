@@ -28,7 +28,7 @@
 - README.md
 説明書MDファイル
 
-## 実行
+## 動作
 
 ### 必要ライブラリ
 
@@ -36,7 +36,9 @@
 
 ###### インストール
 
-~~~pip3 install kanjize~~~
+```
+pip3 install kanjize
+```
 
 自分の実行環境に合わせて適切にインストールしてください。
 
@@ -45,11 +47,15 @@ PATHは適宜読み替えてください。
 
 - 単一ファイルを対象とする場合
 
-```python NTCIR15-rulebase.py 出題jsonファイル 本会議/定例会/議事録jsonファイル```
+```
+python NTCIR15-rulebase.py 出題jsonファイル 本会議/定例会/議事録jsonファイル
+```
 
 - 複数ファイルを対象とする場合
 
-```python NTCIR-rulebase.py -d 出題jsonファイルの入っているディレクトリ 本会議/定例会/議事録jsonファイル```
+```
+python NTCIR-rulebase.py -d 出題jsonファイルの入っているディレクトリ 本会議/定例会/議事録jsonファイル
+```
 
 ### 出力
 
