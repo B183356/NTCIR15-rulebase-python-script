@@ -36,7 +36,7 @@
 
 ###### インストール
 
-```pip3 install kanjize```
+~~~pip3 install kanjize~~~
 
 自分の実行環境に合わせて適切にインストールしてください。
 
